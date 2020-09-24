@@ -3,6 +3,27 @@ local screen = {
     h = 19
 }
 
+local saveFormatVer = 1
+
+instruments = {
+    "bass",
+    "snare",
+    "hat",
+    "basedrum",
+    "bell",
+    "flute",
+    "chime",
+    "guitar",
+    "xylophone",
+    "iron_xylophone",
+    "cow_bell",
+    "didgeridoo",
+    "bit",
+    "banjo",
+    "pling",
+    "harp",
+}
+
 local state = {}
 
 local mChoices = {
@@ -24,6 +45,9 @@ local function init()
     state.running = true
     state.artwork = nil
     state.song = nil
+    state.currentSongPath = nil
+    state.nextSongPath = nil
+    state.prevSongPath = nil
     state.albumTitle = ""
     state.songTitle = ""
     state.author = ""
@@ -174,9 +198,49 @@ local function loadAlbum(path)
     end
 end
 
---TODO: Make a file format and then make a way to load it
 local function loadSong(path)
+    local infile = io.open(path, "r")
+    local lineNum = 1
+    local length = 0
+    local formatVer = 1
+    local song = {}
+    for line in infile:lines() do
+        if lineNum == 1 then -- format version
+            if line:find("brownbricksaudio") ~= 1 then
+                -- TODO: do something when the file trying to be loaded isn't a valid audio file
+                return nil
+            end
+            local s, e = line:find("format v")
+            if s ~= nil then
+                formatVer = tonumber(line:sub(e + 1))
+                if formatVer > saveFormatVer then
+                    -- TODO: do something when the file trying to be loaded is a newer version than what can be recognized
+                    return nil
+                end
+            end
+        elseif lineNum == 2 then -- title
+            state.songTitle = line
+        elseif lineNum == 3 then -- author name
+            state.author = line
+        else -- song data
+            song[lineNum - 3] = {}
+            if line:find("-") ~= nil then -- song waits some number of ticks
+                local silentTicks = tonumber(line:sub(2))
+                song[lineNum - 3].skip = silentTicks
+                length = length + silentTicks
+            else -- song has notes
+                for i = 1, line:len() / 6 do
+                    local s = i * 6 - 1
+                    song[lineNum - 3][i] = {instruments[tonumber(line:sub(s + 3, s + 4))], (tonumber(line:sub(s + 5, s + 6)) + 1) / 16, tonumber(line:sub(s + 1, s + 2))}
+                end
+                length = length + 1
+            end
+        end
+        lineNum = lineNum + 1
+    end
+    song.length = length
 
+    return song
 end
 
 local function getFileName()
