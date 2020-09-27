@@ -34,7 +34,6 @@ local mChoices = {
 local fMessage
 
 local function init()
-    term.clear()
     fMessage = "Press Ctrl to access menu"
     state.loaded = false
     state.album = false
@@ -48,11 +47,16 @@ local function init()
     state.currentSongPath = nil
     state.nextSongPath = nil
     state.prevSongPath = nil
+    state.rewind = false
+    state.skip = false
     state.albumTitle = ""
     state.songTitle = ""
     state.author = ""
 end
 
+--[[
+    Draws all the interface portions of the program.
+]]
 local function drawInterface()
     term.setBackgroundColor(colors.black)
     
@@ -123,6 +127,9 @@ local function drawInterface()
     end
 end
 
+--[[
+    Converts Hexdecimal to 10 based number color ids
+]]
 local tColorLookup = {}
 for n=1,16 do
     tColorLookup[ string.byte( "0123456789abcdef",n,n ) ] = 2^(n-1)
@@ -132,6 +139,9 @@ local function getColorOf( char )
     return tColorLookup[char]
 end
 
+--[[
+    loads a nfp file.
+]]
 local function loadArtwork(path)
     state.artwork = {}
     -- Load the file
@@ -150,6 +160,9 @@ local function loadArtwork(path)
     end
 end
 
+--[[
+    Function to get the color of a pixel from artwork.
+]]
 local function getCanvasPixel( x, y )
     if state.artwork[y] then
         return state.artwork[y][x]
@@ -157,6 +170,9 @@ local function getCanvasPixel( x, y )
     return 0
 end
 
+--[[
+    Function to draw a cropped version of a nfp file.
+]]
 local function drawArtwork()
     local xOffset = 2
     local yOffset = 1
@@ -180,6 +196,11 @@ local function drawArtwork()
     end
 end
 
+--[[
+    Loads a directory as an album.
+
+    @param [string] path
+]]
 local function loadAlbum(path)
     if fs.exists(path) and fs.isDir(path) then
         state.albumIndex = 1
@@ -243,6 +264,10 @@ local function loadSong(path)
     return song
 end
 
+
+--[[
+    A function to request text input from the user
+]]
 local function getFileName()
     term.setCursorPos(1, screen.h)
     term.clearLine()
@@ -250,6 +275,9 @@ local function getFileName()
     return read()
 end
 
+--[[
+    This function opens the user menu and handles the user clicking on menu options.
+]]
 local function accessMenu()
     -- Selected menu option
     local selection = 1
@@ -321,35 +349,50 @@ local function accessMenu()
     end
 end
 
-
+-- This thread is for handling user input to the program.
 local function mainThread()
     while state.running do
+        --render screen
+        term.setBackgroundColor(colors.black)
+        term.clear()
         drawInterface()
         drawArtwork()
 
+        --wait for event
         local event, p1, p2, p3 = os.pullEvent()
 
+        --if key event
         if event == "key_up" then
+
+            --ctrl: open menu
             if p1==keys.leftCtrl or p1==keys.rightCtrl then
                 if accessMenu() then
                     term.setCursorPos(1, 1)
                     term.clear()
                     return
                 end
-
-                drawInterface()
             end
         elseif event == "mouse_click" then
+
+            --if left mouse click
             if p1 == 1 then
 
+                --if is loaded and clicked on point (5, screen.h -2) then invert playing state
                 if state.loaded and p2 == 5 and p3 == (screen.h - 2) then
                     state.playing = not state.playing
                 end
+
+                --if prevSongPath is set and clicked on point (2, screen.h - 2) then set the state to rewind
+                if state.prevSongPath ~= nil and p2 == 2 and p3 == (screen.h - 2) then
+                    state.rewind = true
+                end
+
+                --if nextSongPath is set and clicked on point (8, screen.h - 2) then set the state to skip
+                if state.nextSongPath ~= nil and p2 == 8 and p3 == (screen.h - 2) then
+                    state.skip = true
+                end
             end
         end
-
-        term.setBackgroundColor(colors.black)
-        term.clear()
     end
 end
 
