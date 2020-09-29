@@ -3,9 +3,14 @@ local screen = {
     h = 19
 }
 
+local speaker = peripheral.find("speaker")
+if not speaker then
+    error("No speaker connected.")
+end
+
 local saveFormatVer = 1
 
-instruments = {
+local instruments = {
     "bass",
     "snare",
     "hat",
@@ -39,7 +44,7 @@ local function init()
     state.playing = false
     state.dirLoc = nil
     state.albumIndex = 1
-    state.songFrameIndex = 1
+    state.songFrameIndex = 0
     state.songPerc = 0
     state.running = true
     state.artwork = nil
@@ -196,6 +201,22 @@ local function drawArtwork()
 end
 
 --[[
+    wait for an event given multiple different filters
+]]
+local function pullEventMultiple(...)
+    local eventData = {}
+    functions = {}
+    for i, filter in ipairs({...}) do
+        functions[i] = function()
+            eventData = {os.pullEvent(filter)}
+        end
+    end
+
+    parallel.waitForAny(unpack(functions))
+    return unpack(eventData)
+end
+
+--[[
     Loads a directory as an album.
 
     @param [string] path
@@ -254,15 +275,14 @@ local function loadSong(path, reportError)
         elseif lineNum == 3 then -- author name
             state.author = line
         else -- song data
-            song[lineNum - 3] = {}
+            song[length] = {}
             if line:find("-") ~= nil then -- song waits some number of ticks
                 local silentTicks = tonumber(line:sub(2))
-                song[lineNum - 3].skip = silentTicks
                 length = length + silentTicks
             else -- song has notes
                 for i = 1, line:len() / 6 do
                     local s = i * 6 - 1
-                    song[lineNum - 3][i] = {instruments[tonumber(line:sub(s + 3, s + 4))], (tonumber(line:sub(s + 5, s + 6)) + 1) / 16, tonumber(line:sub(s + 1, s + 2))}
+                    song[length][i] = {instruments[tonumber(line:sub(s + 3, s + 4))], (tonumber(line:sub(s + 5, s + 6)) + 1) / 16, tonumber(line:sub(s + 1, s + 2))}
                 end
                 length = length + 1
             end
@@ -286,7 +306,7 @@ local function startSong(song)
         local prev = nil
         local setNext = false
         for f in fs.list(state.dirLoc) do
-            if setNext and (not fs.isDir(f) and f ~= state.dirLoc .. "artwork.nfp") then
+            if setNext and not fs.isDir(f) and f ~= state.dirLoc .. "artwork.nfp" then
                 state.nextSongPath = f
                 break
             end
@@ -397,7 +417,7 @@ local function mainThread()
         drawArtwork()
 
         --wait for event
-        local event, p1, p2, p3 = os.pullEvent()
+        local event, p1, p2, p3 = pullEventMultiple("key_up", "mouse_click")
 
         --if key event
         if event == "key_up" then
@@ -431,22 +451,60 @@ local function mainThread()
                 end
             end
         end
-
-        if state.rewind then
-            state.rewind = false
-            -- TODO: handle rewind
-        end
-        if state.skip then
-            state.skip = false
-            -- TODO: handle skip
-        end
     end
 end
 
 local function songThread()
     while state.running do
-        -- TODO: play song
-        sleep(1)
+        if state.playing then
+            if state.songFrameIndex >= state.song.data.length then
+                if state.nextSongPath ~= nil then
+                    local song = {path = state.nextSongPath, data = loadSong(state.nextSongPath)}
+                    if song.data ~= nil then
+                        startSong(song)
+                    end
+                else
+                    state.song = nil
+                    state.playing = false
+                end
+            else
+                os.pullEvent("alarm")
+                for i, note in ipairs(state.song.data[state.songFrameIndex] or {}) do
+                    speaker.playNote(unpack(state.song.data[state.songFrameIndex]))
+                end
+                time = os.time()
+                alarmTime = (time + 0.001) % 24
+                os.setAlarm(alarmTime)
+
+                if state.rewind then
+                    state.rewind = false
+                    if state.prevSongPath ~= nil and state.songFrameIndex < 40 then
+                        local song = {path = state.prevSongPath, data = loadSong(state.prevSongPath)}
+                        if song.data ~= nil then
+                            startSong(song)
+                        end
+                    else
+                        state.songFrameIndex = 0
+                    end
+                elseif state.skip then
+                    state.skip = false
+                    if state.nextSongPath ~= nil then
+                        local song = {path = state.nextSongPath, data = loadSong(state.nextSongPath)}
+                        if song.data ~= nil then
+                            startSong(song)
+                        end
+                    else
+                        state.song = nil
+                        state.playing = false
+                    end
+                else
+                    state.songFrameIndex = state.songFrameIndex + 1
+                end
+            end
+        else
+            os.startTimer(0.001)
+            os.pullEvent("timer")
+        end
     end
 end
 
