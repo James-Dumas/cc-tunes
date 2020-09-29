@@ -277,9 +277,25 @@ end
 local function startSong(song)
     state.song = song
     state.songFrameIndex = 1
+    state.songPerc = 0
     state.playing = true
+    state.nextSongPath = nil
+    state.prevSongPath = nil
     if album then
-        -- TODO: set next and previous song
+        -- set next and prev song
+        local prev = nil
+        local setNext = false
+        for f in fs.list(state.dirLoc) do
+            if setNext and (not fs.isDir(f) and f ~= state.dirLoc .. "artwork.nfp") then
+                state.nextSongPath = f
+                break
+            end
+            if f == state.song.path then
+                state.prevSongPath = prev
+                setNext = true
+            end
+            prev = f
+        end
     end
 end
 
@@ -357,7 +373,10 @@ local function accessMenu()
                     return true
                 elseif mChoices[selection]=="Load Song" then
                     local fileLoc = getFileName()
-                    startSong({path = fileLoc, data = loadSong(fileLoc, true)})
+                    local song = {path = fileLoc, data = loadSong(fileLoc, true)}
+                    if song.data ~= nil then
+                        startSong(song)
+                    end
                     return false
                 end
             elseif key == keys.leftCtrl or keys == keys.rightCtrl then
