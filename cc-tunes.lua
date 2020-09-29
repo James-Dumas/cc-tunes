@@ -35,16 +35,15 @@ local fMessage
 
 local function init()
     fMessage = "Press Ctrl to access menu"
-    state.loaded = false
     state.album = false
     state.playing = false
     state.dirLoc = nil
     state.albumIndex = 1
+    state.songFrameIndex = 1
     state.songPerc = 0
     state.running = true
     state.artwork = nil
     state.song = nil
-    state.currentSongPath = nil
     state.nextSongPath = nil
     state.prevSongPath = nil
     state.rewind = false
@@ -61,7 +60,7 @@ local function drawInterface()
     term.setBackgroundColor(colors.black)
     
     --player button
-    if state.loaded then
+    if state.song ~= nil then
         term.setTextColor(colors.white)
     else
         term.setTextColor(colors.lightGray)
@@ -76,7 +75,7 @@ local function drawInterface()
     end
     
     --back and forward button
-    if state.loaded and state.album then
+    if state.song ~= nil and state.album then
         term.setTextColor(colors.white)
     else
         term.setTextColor(colors.lightGray)
@@ -116,7 +115,7 @@ local function drawInterface()
     local scrubPos = 11 + math.floor(state.songPerc * ((screen.w - 3) - 11));
 
     for i=11, screen.w - 2, 1 do
-        if i == scrubPos and state.loaded then
+        if i == scrubPos and state.song ~= nil then
             term.setBackgroundColor(colors.white)
         else 
             term.setBackgroundColor(colors.gray)
@@ -211,15 +210,22 @@ local function loadAlbum(path)
             loadArtwork(path .. "artwork.nfp")
         end
 
-        --TODO: Load first song
-
-        state.loaded = true
+        local song = nil
+        for f in fs.list(path) do
+            if not fs.isDir(f) then
+                song = {path = f, data = loadSong()}
+                if song.data ~= nil then
+                    startSong(song)
+                    break
+                end
+            end
+        end
     else
         fMessage ="Directory does not exist" 
     end
 end
 
-local function loadSong(path)
+local function loadSong(path, reportError)
     local infile = io.open(path, "r")
     local lineNum = 1
     local length = 0
@@ -228,14 +234,18 @@ local function loadSong(path)
     for line in infile:lines() do
         if lineNum == 1 then -- format version
             if line:find("brownbricksaudio") ~= 1 then
-                -- TODO: do something when the file trying to be loaded isn't a valid audio file
+                if reportError then
+                    -- TODO: do something when the file trying to be loaded isn't a valid audio file
+                end
                 return nil
             end
             local s, e = line:find("format v")
             if s ~= nil then
                 formatVer = tonumber(line:sub(e + 1))
                 if formatVer > saveFormatVer then
-                    -- TODO: do something when the file trying to be loaded is a newer version than what can be recognized
+                    if reportError then
+                        -- TODO: do something when the file trying to be loaded is a newer version than what can be recognized
+                    end
                     return nil
                 end
             end
@@ -264,6 +274,14 @@ local function loadSong(path)
     return song
 end
 
+local function startSong(song)
+    state.song = song
+    state.songFrameIndex = 1
+    state.playing = true
+    if album then
+        -- TODO: set next and previous song
+    end
+end
 
 --[[
     A function to request text input from the user
@@ -339,7 +357,8 @@ local function accessMenu()
                     return true
                 elseif mChoices[selection]=="Load Song" then
                     local fileLoc = getFileName()
-                    loadSong(fileLoc)
+                    startSong({path = fileLoc, data = loadSong(fileLoc, true)})
+                    return false
                 end
             elseif key == keys.leftCtrl or keys == keys.rightCtrl then
                 -- Cancel the menu
@@ -378,7 +397,7 @@ local function mainThread()
             if p1 == 1 then
 
                 --if is loaded and clicked on point (5, screen.h -2) then invert playing state
-                if state.loaded and p2 == 5 and p3 == (screen.h - 2) then
+                if state.song ~= nil and p2 == 5 and p3 == (screen.h - 2) then
                     state.playing = not state.playing
                 end
 
@@ -393,11 +412,21 @@ local function mainThread()
                 end
             end
         end
+
+        if state.rewind then
+            state.rewind = false
+            -- TODO: handle rewind
+        end
+        if state.skip then
+            state.skip = false
+            -- TODO: handle skip
+        end
     end
 end
 
 local function songThread()
     while state.running do
+        -- TODO: play song
         sleep(1)
     end
 end
