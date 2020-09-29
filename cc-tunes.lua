@@ -358,51 +358,49 @@ local function accessMenu()
         end
         
         -- Handle input in the menu
-        local id,key = os.pullEvent("key_up")
-        if id == "key" then
-            -- S and E are shortcuts
-            if key == keys.s then
+        local event, key = os.pullEvent("key")
+        -- S and E are shortcuts
+        if key == keys.s then
+            selection = 1
+            key = keys.enter
+        elseif key == keys.e then
+            selection = 2
+            key = keys.enter
+        end
+    
+        if key == keys.right then
+            -- Move right
+            selection = selection + 1
+            if selection > #mChoices then
                 selection = 1
-                key = keys.enter
-            elseif key == keys.e then
-                selection = 2
-                key = keys.enter
             end
-        
-            if key == keys.right then
-                -- Move right
-                selection = selection + 1
-                if selection > #mChoices then
-                    selection = 1
-                end
-                
-            elseif key == keys.left and selection > 1 then
-                -- Move left
-                selection = selection - 1
-                if selection < 1 then
-                    selection = #mChoices
-                end
-                
-            elseif key == keys.enter then
-                -- Select an option
-                if mChoices[selection]=="Load Album" then 
-                    local fileLoc = getFileName()
-                    loadAlbum(fileLoc)
-                    return false
-                elseif mChoices[selection]=="Exit" then 
-                    return true
-                elseif mChoices[selection]=="Load Song" then
-                    local fileLoc = getFileName()
-                    local song = {path = fileLoc, data = loadSong(fileLoc, true)}
-                    if song.data ~= nil then
-                        startSong(song)
-                    end
-                    return false
-                end
-            elseif key == keys.leftCtrl or keys == keys.rightCtrl then
-                -- Cancel the menu
-                return false 
+            
+        elseif key == keys.left and selection > 1 then
+            -- Move left
+            selection = selection - 1
+            if selection < 1 then
+                selection = #mChoices
             end
+            
+        elseif key == keys.enter then
+            -- Select an option
+            if mChoices[selection]=="Load Album" then 
+                local fileLoc = getFileName()
+                loadAlbum(fileLoc)
+                return false
+            elseif mChoices[selection]=="Exit" then 
+                return true
+            elseif mChoices[selection]=="Load Song" then
+                local fileLoc = getFileName()
+                local song = {path = fileLoc, data = loadSong(fileLoc, true)}
+                if song.data ~= nil then
+                    startSong(song)
+                end
+                return false
+            end
+        elseif key == keys.leftCtrl or keys == keys.rightCtrl then
+            -- Cancel the menu
+            return false 
         end
     end
 end
@@ -417,10 +415,10 @@ local function mainThread()
         drawArtwork()
 
         --wait for event
-        local event, p1, p2, p3 = pullEventMultiple("key_up", "mouse_click")
+        local event, p1, p2, p3 = pullEventMultiple("key", "mouse_click")
 
         --if key event
-        if event == "key_up" then
+        if event == "key" then
 
             --ctrl: open menu
             if p1==keys.leftCtrl or p1==keys.rightCtrl then
