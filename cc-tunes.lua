@@ -95,31 +95,32 @@ local function drawInterface()
     term.setTextColor(colors.white)
 
     --song info
-    term.setCursorPos(25, 6)
-    term.write(state.songTitle)
+    if state.song ~= nil then
+        term.setCursorPos(25, 6)
+        term.write(state.songTitle)
 
-    if state.albumTitle == "" or state.albumTitle == nil then
-        term.setCursorPos(25, 8)
-        term.write(state.author)
-
-    else
-        term.setCursorPos(25, 8)
-        term.write(state.albumTitle)
-        term.setCursorPos(25, 10)
-        term.write(state.author)
+        if state.albumTitle == "" or state.albumTitle == nil then
+            term.setCursorPos(25, 8)
+            term.write(state.author)
+        else
+            term.setCursorPos(25, 8)
+            term.write(state.albumTitle)
+            term.setCursorPos(25, 10)
+            term.write(state.author)
+        end
     end
-
 
     -- Footer
     term.setCursorPos(1, screen.h)
     term.setTextColor(colors.yellow)
     term.clearLine()
     term.write(fMessage)
+end
 
-    --song scrub bar
-    local scrubPos = 11 + math.floor(state.songPerc * ((screen.w - 3) - 11));
+local function drawScrubBar()
+    local scrubPos = 11 + math.floor((state.songPerc * ((screen.w - 2) - 11)) + 0.5);
 
-    for i=11, screen.w - 2, 1 do
+    for i = 11, screen.w - 2 do
         if i == scrubPos and state.song ~= nil then
             term.setBackgroundColor(colors.white)
         else 
@@ -247,6 +248,12 @@ local function loadAlbum(path)
 end
 
 local function loadSong(path, reportError)
+    if not fs.exists(path) then
+        if reportError then
+            -- TODO: do something when the file trying to be loaded does not exist
+        end
+        return nil
+    end
     local infile = io.open(path, "r")
     local lineNum = 1
     local length = 0
@@ -271,9 +278,9 @@ local function loadSong(path, reportError)
                 end
             end
         elseif lineNum == 2 then -- title
-            state.songTitle = line
+            song.title = line
         elseif lineNum == 3 then -- author name
-            state.author = line
+            song.author = line
         else -- song data
             song[length] = {}
             if line:find("-") ~= nil then -- song waits some number of ticks
@@ -281,8 +288,11 @@ local function loadSong(path, reportError)
                 length = length + silentTicks
             else -- song has notes
                 for i = 1, line:len() / 6 do
-                    local s = i * 6 - 1
-                    song[length][i] = {instruments[tonumber(line:sub(s + 3, s + 4))], (tonumber(line:sub(s + 5, s + 6)) + 1) / 16, tonumber(line:sub(s + 1, s + 2))}
+                    local s = (i - 1) * 6
+                    local inst = instruments[tonumber(line:sub(s + 3, s + 4))]
+                    local volume = (tonumber(line:sub(s + 5, s + 6)) + 1) / 16
+                    local pitch = tonumber(line:sub(s + 1, s + 2))
+                    song[length][i] = {inst, volume, pitch}
                 end
                 length = length + 1
             end
@@ -296,6 +306,8 @@ end
 
 local function startSong(song)
     state.song = song
+    state.author = song.data.author
+    state.songTitle = song.data.title
     state.songFrameIndex = 1
     state.songPerc = 0
     state.playing = true
@@ -387,20 +399,20 @@ local function accessMenu()
             if mChoices[selection]=="Load Album" then 
                 local fileLoc = getFileName()
                 loadAlbum(fileLoc)
-                return false
             elseif mChoices[selection]=="Exit" then 
-                return true
+                state.running = false
             elseif mChoices[selection]=="Load Song" then
                 local fileLoc = getFileName()
                 local song = {path = fileLoc, data = loadSong(fileLoc, true)}
                 if song.data ~= nil then
                     startSong(song)
                 end
-                return false
             end
+            -- Cancel the menu
+            break
         elseif key == keys.leftCtrl or keys == keys.rightCtrl then
             -- Cancel the menu
-            return false 
+            break
         end
     end
 end
@@ -412,21 +424,18 @@ local function mainThread()
         term.setBackgroundColor(colors.black)
         term.clear()
         drawInterface()
+        drawScrubBar()
         drawArtwork()
 
         --wait for event
-        local event, p1, p2, p3 = pullEventMultiple("key", "mouse_click")
+        local event, p1, p2, p3 = pullEventMultiple("key", "mouse_click", "timer")
 
         --if key event
         if event == "key" then
 
             --ctrl: open menu
             if p1==keys.leftCtrl or p1==keys.rightCtrl then
-                if accessMenu() then
-                    term.setCursorPos(1, 1)
-                    term.clear()
-                    return
-                end
+                accessMenu()
             end
         elseif event == "mouse_click" then
 
@@ -453,58 +462,67 @@ local function mainThread()
 end
 
 local function songThread()
+    time = os.time()
+    alarmTime = (time + 0.001) % 24
+    os.setAlarm(alarmTime)
     while state.running do
+        os.pullEvent("alarm")
+        time = os.time()
+        alarmTime = (time + 0.001) % 24
+        os.setAlarm(alarmTime)
+
         if state.playing then
-            if state.songFrameIndex >= state.song.data.length then
-                if state.nextSongPath ~= nil then
-                    local song = {path = state.nextSongPath, data = loadSong(state.nextSongPath)}
-                    if song.data ~= nil then
-                        startSong(song)
-                    end
-                else
-                    state.song = nil
-                    state.playing = false
+            state.songPerc = state.songFrameIndex / state.song.data.length
+            for i, note in ipairs(state.song.data[state.songFrameIndex] or {}) do
+                speaker.playNote(unpack(note))
+            end
+            state.songFrameIndex = state.songFrameIndex + 1
+            drawScrubBar()
+        end
+
+        if state.rewind then
+            state.rewind = false
+            if state.prevSongPath ~= nil and state.songFrameIndex < 40 then
+                local song = {path = state.prevSongPath, data = loadSong(state.prevSongPath)}
+                if song.data ~= nil then
+                    startSong(song)
                 end
             else
-                os.pullEvent("alarm")
-                for i, note in ipairs(state.song.data[state.songFrameIndex] or {}) do
-                    speaker.playNote(unpack(state.song.data[state.songFrameIndex]))
-                end
-                time = os.time()
-                alarmTime = (time + 0.001) % 24
-                os.setAlarm(alarmTime)
-
-                if state.rewind then
-                    state.rewind = false
-                    if state.prevSongPath ~= nil and state.songFrameIndex < 40 then
-                        local song = {path = state.prevSongPath, data = loadSong(state.prevSongPath)}
-                        if song.data ~= nil then
-                            startSong(song)
-                        end
-                    else
-                        state.songFrameIndex = 0
-                    end
-                elseif state.skip then
-                    state.skip = false
-                    if state.nextSongPath ~= nil then
-                        local song = {path = state.nextSongPath, data = loadSong(state.nextSongPath)}
-                        if song.data ~= nil then
-                            startSong(song)
-                        end
-                    else
-                        state.song = nil
-                        state.playing = false
-                    end
-                else
-                    state.songFrameIndex = state.songFrameIndex + 1
-                end
+                state.songFrameIndex = 0
             end
-        else
-            os.startTimer(0.001)
-            os.pullEvent("timer")
+            os.startTimer(0)
+        end
+
+        if state.skip then
+            state.skip = false
+            if state.nextSongPath ~= nil then
+                local song = {path = state.nextSongPath, data = loadSong(state.nextSongPath)}
+                if song.data ~= nil then
+                    startSong(song)
+                end
+            else
+                state.song = nil
+                state.playing = false
+            end
+            os.startTimer(0)
+        end
+
+        if state.song ~= nil and state.songFrameIndex >= state.song.data.length then
+            if state.nextSongPath ~= nil then
+                local song = {path = state.nextSongPath, data = loadSong(state.nextSongPath)}
+                if song.data ~= nil then
+                    startSong(song)
+                end
+            else
+                state.song = nil
+                state.playing = false
+            end
+            os.startTimer(0)
         end
     end
 end
 
 init()
 parallel.waitForAny(mainThread, songThread)
+term.setCursorPos(1, 1)
+term.clear()
