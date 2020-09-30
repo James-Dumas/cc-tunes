@@ -40,6 +40,8 @@ local fMessage
 
 local function init()
     fMessage = "Press Ctrl to access menu"
+    state.redraw = true
+    state.menuOpen = false
     state.album = false
     state.playing = false
     state.dirLoc = nil
@@ -110,11 +112,13 @@ local function drawInterface()
         end
     end
 
-    -- Footer
-    term.setCursorPos(1, screen.h)
-    term.setTextColor(colors.yellow)
-    term.clearLine()
-    term.write(fMessage)
+    if not state.menuOpen then
+        -- Footer
+        term.setCursorPos(1, screen.h)
+        term.setTextColor(colors.yellow)
+        term.clearLine()
+        term.write(fMessage)
+    end
 end
 
 local function drawScrubBar()
@@ -347,11 +351,13 @@ end
 local function accessMenu()
     -- Selected menu option
     local selection = 1
+    state.menuOpen = true
     
     term.setBackgroundColor(colors.black)
 
     while true do
         -- Draw the menu
+        term.setBackgroundColor(colors.black)
         term.setCursorPos(1,screen.h)
         term.clearLine()
         term.setTextColor(colors.white)
@@ -415,20 +421,15 @@ local function accessMenu()
             break
         end
     end
+    state.menuOpen = false
 end
 
 -- This thread is for handling user input to the program.
 local function mainThread()
     while state.running do
-        --render screen
-        term.setBackgroundColor(colors.black)
-        term.clear()
-        drawInterface()
-        drawScrubBar()
-        drawArtwork()
 
         --wait for event
-        local event, p1, p2, p3 = pullEventMultiple("key", "mouse_click", "timer")
+        local event, p1, p2, p3 = pullEventMultiple("key", "mouse_click")
 
         --if key event
         if event == "key" then
@@ -436,6 +437,7 @@ local function mainThread()
             --ctrl: open menu
             if p1==keys.leftCtrl or p1==keys.rightCtrl then
                 accessMenu()
+                state.redraw = true
             end
         elseif event == "mouse_click" then
 
@@ -445,6 +447,7 @@ local function mainThread()
                 --if is loaded and clicked on point (5, screen.h -2) then invert playing state
                 if state.song ~= nil and p2 == 5 and p3 == (screen.h - 2) then
                     state.playing = not state.playing
+                    state.redraw = true
                 end
 
                 --if prevSongPath is set and clicked on point (2, screen.h - 2) then set the state to rewind
@@ -462,14 +465,11 @@ local function mainThread()
 end
 
 local function songThread()
-    time = os.time()
-    alarmTime = (time + 0.001) % 24
-    os.setAlarm(alarmTime)
+    local t = 0.05 -- one tick
+    os.startTimer(0)
     while state.running do
-        os.pullEvent("alarm")
-        time = os.time()
-        alarmTime = (time + 0.001) % 24
-        os.setAlarm(alarmTime)
+        os.pullEvent("timer")
+        os.startTimer(t)
 
         if state.playing then
             state.songPerc = state.songFrameIndex / state.song.data.length
@@ -490,7 +490,7 @@ local function songThread()
             else
                 state.songFrameIndex = 0
             end
-            os.startTimer(0)
+            state.redraw = true
         end
 
         if state.skip then
@@ -504,7 +504,7 @@ local function songThread()
                 state.song = nil
                 state.playing = false
             end
-            os.startTimer(0)
+            state.redraw = true
         end
 
         if state.song ~= nil and state.songFrameIndex >= state.song.data.length then
@@ -517,12 +517,23 @@ local function songThread()
                 state.song = nil
                 state.playing = false
             end
-            os.startTimer(0)
+            state.redraw = true
+        end
+
+        if state.redraw then
+            -- render screen
+            state.redraw = false
+            term.setBackgroundColor(colors.black)
+            term.clear()
+            drawInterface()
+            drawScrubBar()
+            drawArtwork()
         end
     end
 end
 
 init()
 parallel.waitForAny(mainThread, songThread)
+term.setBackgroundColor(colors.black)
 term.setCursorPos(1, 1)
 term.clear()
