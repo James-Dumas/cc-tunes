@@ -82,7 +82,7 @@ local function drawInterface()
     end
     
     --back and forward button
-    if state.song ~= nil and state.album then
+    if state.song ~= nil then
         term.setTextColor(colors.white)
     else
         term.setTextColor(colors.lightGray)
@@ -451,12 +451,12 @@ local function mainThread()
                 end
 
                 --if prevSongPath is set and clicked on point (2, screen.h - 2) then set the state to rewind
-                if state.prevSongPath ~= nil and p2 == 2 and p3 == (screen.h - 2) then
+                if state.song ~= nil and p2 == 2 and p3 == (screen.h - 2) then
                     state.rewind = true
                 end
 
                 --if nextSongPath is set and clicked on point (8, screen.h - 2) then set the state to skip
-                if state.nextSongPath ~= nil and p2 == 8 and p3 == (screen.h - 2) then
+                if state.song ~= nil and p2 == 8 and p3 == (screen.h - 2) then
                     state.skip = true
                 end
             end
